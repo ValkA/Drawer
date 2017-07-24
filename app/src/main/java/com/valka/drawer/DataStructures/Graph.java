@@ -1,7 +1,6 @@
 package com.valka.drawer.DataStructures;
 
 import android.graphics.Bitmap;
-import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,13 +55,13 @@ public class Graph extends HashMap<Vertex, ArrayList<Edge>> {
 
     private Set<Vertex> notVisitedV;
     private HashSet<Edge> visitedE;
-    public interface TMP{
-        void onEdge(Edge e);
+    public interface onEdgeListener {
+        void onEdge(Edge e, double progress);
     }
-    TMP tmp;
+    onEdgeListener onEdgeListener;
     Vertex lastV;
-    public void createDfsGCode(TMP tmp){
-        this.tmp = tmp;
+    public void createDfsGCode(onEdgeListener onEdgeListener){
+        this.onEdgeListener = onEdgeListener;
         notVisitedV = new HashSet(keySet());
         visitedE = new HashSet<>();
 
@@ -84,13 +83,13 @@ public class Graph extends HashMap<Vertex, ArrayList<Edge>> {
 
     private void dfs(Vertex u){
         if(!notVisitedV.contains(u)) return;//if visited u
+        lastV = u;
         notVisitedV.remove(u);
         for(Edge uv : get(u)){
             if(visitedE.contains(uv)) continue;
-            lastV = uv.getV(u);
-            tmp.onEdge(uv);
+            onEdgeListener.onEdge(uv, 1d-((double)notVisitedV.size())/size());
             visitedE.add(uv);
-            dfs(lastV);
+            dfs(uv.getV(u));
         }
     }
 }
