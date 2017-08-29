@@ -1,11 +1,17 @@
 #include "Vector.h"
 #include "InverseKinematics.h"
 #include "Drawers.h"
+#include <SoftwareSerial.h>
+
+// #define DEBUG_SERIAL Serial
 
 
-
+SoftwareSerial softwareSerial(BLUETOOTH_TX_PIN, BLUETOOTH_RX_PIN);
 void setup() {
-    Serial.begin(9600);
+    softwareSerial.begin(9600);
+    #ifdef DEBUG_SERIAL
+        DEBUG_SERIAL.begin(9600);
+    #endif
 
     initInverseKinematics();
     initPen();
@@ -17,7 +23,6 @@ char busyRead(Stream& stream){
     while(!stream.available()){}
     return stream.read();
 }
-
 
 #define BUFFER_SIZE 64
 void parseLine(Stream& stream){
@@ -32,9 +37,11 @@ void parseLine(Stream& stream){
         if(!comment_mode && *p != '\r'){ //accept char that is not '/r'
             ++p;
             ++i;
-            if(i==BUFFER_SIZE){
-                //flush this line... too big for us...
-                Serial.println("Too big command");
+            if(i==BUFFER_SIZE){//flush this line... too big for us...
+                #ifdef DEBUG_SERIAL
+                    DEBUG_SERIAL.println("er");
+                #endif
+                stream.println("er");
                 *p = busyRead(stream);
                 while(*p != '\n'){
                     *p = busyRead(stream);
@@ -46,8 +53,18 @@ void parseLine(Stream& stream){
     }
     *p = 0;
 
+    #ifdef DEBUG_SERIAL
+        DEBUG_SERIAL.println(command);
+        DEBUG_SERIAL.println("ok");
+    #endif
+    
+    stream.println("ok");
+
     if(command[0] != 'G' && (command[1] != '1' || command[1] != '0')){
-        Serial.println("non G command");
+        #ifdef DEBUG_SERIAL
+            DEBUG_SERIAL.println("er");
+        #endif
+        stream.println("er");
         return;
     }
 
@@ -61,22 +78,28 @@ void parseLine(Stream& stream){
     if(Y) newPos.y = atof(Y+1);
     if(Z) newZ = atof(Z+1);
 
-    currentZ = newZ; //TODO: figure out how to handle "z"
     penGotoInterpolated(newPos);
-
-    stream.println("ok");
+    //TODO: figure out how to handle "z" and then currentZ = newZ;
 
 }
 
 void loop() {
-    // parseLine(Serial);
+    parseLine(softwareSerial);
 
-    Vector center(70,70);
-    for(double i=0.0; i<=5; i+=1.0){
-        drawRect(center,i,i);
-    }
-    for(double i=0.0; i<=30; i+=10){
-        drawCircle(center,i);
-    }
-    drawSpiral(center, 30, 10);
+    // if(softwareSerial.available()){
+    //     DEBUG_SERIAL.write(softwareSerial.read());
+    // }
+    //
+    // if(DEBUG_SERIAL.available()){
+    //     softwareSerial.write(DEBUG_SERIAL.read());
+    // }
+
+    // Vector center(70,70);
+    // for(double i=0.0; i<=5; i+=1.0){
+    //     drawRect(center,i,i);
+    // }
+    // for(double i=0.0; i<=30; i+=10){
+    //     drawCircle(center,i);
+    // }
+    // drawSpiral(center, 30, 10);
 }
