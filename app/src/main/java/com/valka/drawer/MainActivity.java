@@ -2,31 +2,40 @@ package com.valka.drawer;
 
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.net.Uri;
+import android.os.Bundle;
 import android.provider.MediaStore;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
+import android.widget.SeekBar;
 import android.widget.Toast;
 
 import com.theartofdev.edmodo.cropper.CropImage;
 import com.theartofdev.edmodo.cropper.CropImageView;
-import com.valka.drawer.Algorithms.CannyEdges;
-import com.valka.drawer.DataStructures.Edge;
-import com.valka.drawer.DataStructures.Graph;
-import com.valka.drawer.DataStructures.Vertex;
 import com.valka.drawer.DrawerDevice.BTDrawerDevice;
 import com.valka.drawer.DrawerDevice.BaseDrawerDevice;
 
+import org.opencv.android.OpenCVLoader;
+import org.opencv.android.Utils;
+import org.opencv.core.Core;
+import org.opencv.core.CvType;
+import org.opencv.core.Mat;
+import org.opencv.core.MatOfPoint;
+import org.opencv.core.Point;
+import org.opencv.core.Scalar;
+import org.opencv.imgproc.Imgproc;
+
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
     final static String TAG = "Main";
@@ -36,17 +45,32 @@ public class MainActivity extends AppCompatActivity {
     ProgressBar progressBarHorizontal;
     ProgressBar progressBarCircular;
     Button chooseImageButton;
+    SeekBar lowThresBar;
+    SeekBar hiThresBar;
 
     BTDrawerDevice btDrawerDevice = new BTDrawerDevice(this);
 
-    Thread drawThread = new Thread(){
+
+    static {
+        if(!OpenCVLoader.initDebug()){
+            Log.d(TAG, "OpenCV not loaded");
+        } else {
+            Log.d(TAG, "OpenCV loaded");
+        }
+    }
+
+    Mat edgesMat = null;
+    Bitmap edgesBitmap = null;
+    Thread imageThread = new Thread(){
             @Override
             public void run(){
+                if (choseImageUri == null || choseImageUri.equals(Uri.EMPTY)) return;
+
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {progressBarCircular.setVisibility(View.VISIBLE);}
                 });
-                if (choseImageUri == null || choseImageUri.equals(Uri.EMPTY)) return;
+
                 Bitmap bitmap;
                 try {
                     bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(),choseImageUri);
@@ -55,65 +79,119 @@ public class MainActivity extends AppCompatActivity {
                     return;
                 }
 
-                Log.e(TAG,"Canny Start");
-                CannyEdges cannyEdges = new CannyEdges();
-                cannyEdges.setSourceImage(bitmap);
-                cannyEdges.process();
-                Bitmap cannyBitmap = cannyEdges.getEdgesBitmap();
-                Log.e(TAG,"Canny Done");
+                Mat mat = new Mat(bitmap.getHeight(), bitmap.getWidth(), CvType.CV_8UC4);
+                Utils.bitmapToMat(bitmap,mat);
+                Mat grayMat = new Mat(mat.size(), CvType.CV_8UC1);
+                Imgproc.cvtColor(mat, grayMat, Imgproc.COLOR_RGB2GRAY);
+                edgesMat = new Mat(mat.size(), CvType.CV_8UC1);
+                Imgproc.Canny(grayMat, edgesMat, 255.0*lowThresBar.getProgress()/100.0, 255.0*hiThresBar.getProgress()/100.0);
+                //invert colors
+                Mat invertcolormatrix= new Mat(edgesMat.rows(),edgesMat.cols(), edgesMat.type(), new Scalar(255,255,255));
+                Core.subtract(invertcolormatrix, edgesMat, edgesMat);
 
-                final Bitmap drawing = Bitmap.createBitmap(cannyBitmap.getWidth(), cannyBitmap.getHeight(), cannyBitmap.getConfig());
-                final Canvas canvas = new Canvas(drawing);
-                canvas.drawBitmap(cannyBitmap,0,0,null);
+
+                //draw opencv edges mat
+                edgesBitmap = Bitmap.createBitmap(edgesMat.width(), edgesMat.height(), Bitmap.Config.ARGB_8888);
+                Utils.matToBitmap(edgesMat, edgesBitmap);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        image.setImageBitmap(edgesBitmap);
+                        progressBarCircular.setVisibility(View.GONE);
+                    }
+                });
+            }
+        };
+
+        Thread drawThread = new Thread(){
+            @Override
+            public void run(){
+                if (edgesMat == null || edgesBitmap == null) return;
+
+                //get contours and simutae drawing them
+                Mat hierarchy = new Mat();
+                List<MatOfPoint> contoursMats = new ArrayList<>();
+                Imgproc.findContours(edgesMat,contoursMats,hierarchy,Imgproc.RETR_LIST,Imgproc.CHAIN_APPROX_SIMPLE);
+
+                List<List<Point>> contours = sortContours(contoursMats);
+
+                final Canvas canvas = new Canvas(edgesBitmap);
                 final Paint paint = new Paint();
                 paint.setColor(Color.RED);
                 paint.setAlpha(255);
                 paint.setStrokeWidth(1f);
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        image.setImageBitmap(drawing);
-                    }
-                });
 
-                Log.e(TAG,"Graph Build Start");
-                final Graph g = new Graph(cannyBitmap);
-                Log.e(TAG,"Graph Build Done");
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {progressBarCircular.setVisibility(View.GONE);}
-                });
-                final Vertex lastPos = new Vertex(-1.0, -1.0);
-                final double scaleRatio = 120.0/Math.max(cannyBitmap.getWidth(),cannyBitmap.getHeight());
+                for(int j=0; j<contours.size(); ++j){
+                    paint.setColor(j%3==0 ? Color.RED : j%3==1 ? Color.GREEN : j%3==2 ? Color.BLUE : Color.WHITE);
 
-                g.createDfsGCode(new Graph.onEdgeListener(){
-                    @Override
-                    public void onEdge(Edge e, final double progress) {
-                        //draw simulation on ImageView
-                        canvas.drawLine((float)e.u.x,(float)e.u.y,(float)e.v.x,(float)e.v.y, paint);
+                    final List<Point> contour = contours.get(j);
+                    for(int i=1; i<contour.size(); ++i){
+                        Point p1 = contour.get(i-1);
+                        Point p2 = contour.get(i);
+                        //simulate on lcd
+                        canvas.drawLine((float)p1.x,(float)p1.y,(float)p2.x,(float)p2.y, paint);
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
                                 image.invalidate();
-                                progressBarHorizontal.setProgress((int)(progress*100));
                             }
                         });
+                        try {
+                            Thread.sleep(50);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
 
                         //send to drawer
-                        if(!lastPos.equals(e.u)){
-                            btDrawerDevice.sendGCodeCommand("G0 Z0");//pen up
-                            btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", e.u.x*scaleRatio, (drawing.getHeight()-e.u.y)*scaleRatio));//goto u
-                            btDrawerDevice.sendGCodeCommand("G0 Z1");//pen down
+//                        if(!lastPos.equals(e.u)){
+//                            btDrawerDevice.sendGCodeCommand("G0 Z0");//pen up
+//                            btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", e.u.x*scaleRatio, (drawing.getHeight()-e.u.y)*scaleRatio));//goto u
+//                            btDrawerDevice.sendGCodeCommand("G0 Z1");//pen down
+//
+//                        }
+//                        btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", e.v.x*scaleRatio, (drawing.getHeight()-e.v.y)*scaleRatio));//draw u->v line
+//                        lastPos.x = e.v.x;
+//                        lastPos.y = e.v.y;
 
-                        }
-                        btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", e.v.x*scaleRatio, (drawing.getHeight()-e.v.y)*scaleRatio));//draw u->v line
-                        lastPos.x = e.v.x;
-                        lastPos.y = e.v.y;
                     }
-                });
+                }
 
             }
         };
+
+    List<List<Point>> sortContours(List<MatOfPoint> _unsorted){
+        List<List<Point>> unsorted = new ArrayList<>();
+        for(MatOfPoint matOfPoint : _unsorted){
+            unsorted.add(matOfPoint.toList());
+        }
+
+        int contoursCount = unsorted.size();
+        List<List<Point>> sorted = new LinkedList<>();
+
+        List<Point> p = unsorted.get(0);
+        sorted.add(p);
+        unsorted.remove(p);
+        for(int i=0; i<contoursCount-1; ++i){
+            Point last = p.get(p.size()-1);
+            //find the one with closest beginning to p's end
+            double min = Double.POSITIVE_INFINITY;
+            List<Point> closest = unsorted.get(0);
+            for(int j=0; j<unsorted.size(); ++j){
+                Point first = unsorted.get(j).get(0);
+                double dx = first.x - last.x;
+                double dy = first.y - last.y;
+                double d = Math.sqrt(dx*dx+dy*dy);
+                if(d<min){
+                    closest = unsorted.get(j);
+                    min=d;
+                }
+            }
+            p = closest;
+            sorted.add(closest);
+            unsorted.remove(closest);
+        }
+        return sorted;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -132,12 +210,12 @@ public class MainActivity extends AppCompatActivity {
                         .setAllowRotation(true)
                         .setAllowCounterRotation(true)
                         .setAspectRatio(1,1)
-                        .setRequestedSize(128,128)
+                        .setRequestedSize(512,512)
                         .setGuidelines(CropImageView.Guidelines.ON)
                         .start(MainActivity.this);
             }
         });
-        chooseImageButton.setEnabled(false);
+//        chooseImageButton.setEnabled(false);
 
         findViewById(R.id.choose_device_button).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -150,7 +228,7 @@ public class MainActivity extends AppCompatActivity {
                     } else {
                         Toast.makeText(MainActivity.this, "Connected successfully", Toast.LENGTH_LONG).show();
                     }
-                    chooseImageButton.setEnabled(success);
+//                    chooseImageButton.setEnabled(success);
                     }
                 });
             }
@@ -158,10 +236,31 @@ public class MainActivity extends AppCompatActivity {
 
         findViewById(R.id.draw_button).setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View view) {
-                drawThread.start();
-            }
+            public void onClick(View view) { drawThread.start(); }
         });
+
+        lowThresBar = (SeekBar)findViewById(R.id.seekbar_low_thres);
+        hiThresBar = (SeekBar)findViewById(R.id.seekbar_hi_thres);
+        SeekBar.OnSeekBarChangeListener onSeekBarChangeListener = new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
+                imageThread.start();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+
+            }
+        };
+        lowThresBar.setOnSeekBarChangeListener(onSeekBarChangeListener);
+        hiThresBar.setOnSeekBarChangeListener(onSeekBarChangeListener);
+
+
     }
 
     @Override
@@ -170,6 +269,7 @@ public class MainActivity extends AppCompatActivity {
             CropImage.ActivityResult result = CropImage.getActivityResult(data);
             if (resultCode == RESULT_OK) {
                 choseImageUri = result.getUri();
+                imageThread.start();
             } else if (resultCode == CropImage.CROP_IMAGE_ACTIVITY_RESULT_ERROR_CODE) {
                 Exception error = result.getError();
             }
