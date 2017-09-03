@@ -6,6 +6,7 @@ import android.graphics.Bitmap;
 import org.opencv.core.CvException;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.Point;
 import org.opencv.imgcodecs.Imgcodecs;
 
 import java.io.ByteArrayOutputStream;
@@ -13,6 +14,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 
 public class Utils {
 
@@ -136,4 +138,6 @@ public class Utils {
     private static native void nBitmapToMat2(Bitmap b, long m_addr, boolean unPremultiplyAlpha);
 
     private static native void nMatToBitmap2(long m_addr, Bitmap b, boolean premultiplyAlpha);
+
+
 }

@@ -24,4 +24,5 @@ public abstract class BaseDrawerDevice {
     abstract public void close(Activity activity, OnCloseListener onCloseListener);
     abstract public void sendGCodeCommandASync(String gCodeCommand, OnGCodeCommandResponse onGCodeCommandResponse);
     abstract public CommandResponse sendGCodeCommand(String gCodeCommand);
+    abstract public boolean isConnected();
 }

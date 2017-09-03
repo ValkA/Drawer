@@ -102,8 +102,10 @@ public class BTDrawerDevice extends BaseDrawerDevice {
                         if (!success) {
                             socket = null;
                             onOpenListener.onOpen(false);
+                            isConnected = false;
                             return;
                         }
+                        isConnected = true;
                         onOpenListener.onOpen(true);
                     }
                 }.execute();
@@ -215,6 +217,11 @@ public class BTDrawerDevice extends BaseDrawerDevice {
             default:
                 return CommandResponse.Error;
         }
+    }
+
+    @Override
+    public boolean isConnected() {
+        return isConnected;
     }
 
     private void askToTurnOnBluetooth(Activity activity){

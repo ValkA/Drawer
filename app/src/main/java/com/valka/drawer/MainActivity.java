@@ -26,13 +26,11 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
 import org.opencv.imgproc.Imgproc;
 
 import java.io.IOException;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
@@ -45,6 +43,7 @@ public class MainActivity extends AppCompatActivity {
     Button chooseImageButton;
     SeekBar lowThresBar;
     SeekBar hiThresBar;
+    SeekBar epsilonBar;
 
     BaseDrawerDevice btDrawerDevice = new BTDrawerDevice(this);
 
@@ -59,16 +58,16 @@ public class MainActivity extends AppCompatActivity {
 
     Mat edgesMat = null;
     Bitmap edgesBitmap = null;
+    Bitmap approxBitmap = null;
+    List<List<Point>> approx = null;
+    List<List<Point>> paths = null;
     Thread imageThread = new Thread(){
             @Override
             public void run(){
+                Log.i(TAG, "start image thread");
                 if (choseImageUri == null || choseImageUri.equals(Uri.EMPTY)) return;
 
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {progressBarCircular.setVisibility(View.VISIBLE);}
-                });
-
+                //create gray Mat of image
                 Bitmap bitmap;
                 try {
                     bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(),choseImageUri);
@@ -76,11 +75,12 @@ public class MainActivity extends AppCompatActivity {
                     e.printStackTrace();
                     return;
                 }
-
                 Mat mat = new Mat(bitmap.getHeight(), bitmap.getWidth(), CvType.CV_8UC4);
                 Utils.bitmapToMat(bitmap,mat);
                 Mat grayMat = new Mat(mat.size(), CvType.CV_8UC1);
                 Imgproc.cvtColor(mat, grayMat, Imgproc.COLOR_RGB2GRAY);
+
+                //create canny edges mat
                 edgesMat = new Mat(mat.size(), CvType.CV_8UC1);
                 Imgproc.Canny(grayMat, edgesMat, 255.0*lowThresBar.getProgress()/100.0, 255.0*hiThresBar.getProgress()/100.0);
                 //invert colors
@@ -94,7 +94,44 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void run() {
                         image.setImageBitmap(edgesBitmap);
-                        progressBarCircular.setVisibility(View.GONE);
+                    }
+                });
+                paths = null;
+                Log.i(TAG, "canny done");
+            }
+        };
+
+        Thread approxThread = new Thread(){
+            @Override
+            public void run(){
+                try {
+                    drawThread.join();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                Log.i(TAG, "start approx thread");
+                //create paths and approx paths
+                if (paths == null) paths = DrawerUtils.getAsListOfPaths(edgesMat);
+                Log.i(TAG, "getAsListOfPaths done");
+                approx = DrawerUtils.approxPolyDP(paths,epsilonBar.getProgress()/25.0,false);
+                Log.i(TAG, "approxPolyDP done");
+
+                approxBitmap = Bitmap.createBitmap(edgesMat.width(), edgesMat.height(), Bitmap.Config.ARGB_8888);
+                final Canvas canvas = new Canvas(approxBitmap);
+                final Paint paint = new Paint();
+                canvas.drawColor(Color.BLACK);
+                paint.setColor(Color.WHITE);
+                paint.setAlpha(255);
+                paint.setStrokeWidth(1f);
+                for(List<Point> path : approx){
+                    DrawerUtils.drawPath(canvas, path, paint);
+                }
+                Log.i(TAG, "drawing paths done");
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        image.setImageBitmap(approxBitmap);
                     }
                 });
             }
@@ -103,44 +140,52 @@ public class MainActivity extends AppCompatActivity {
         Thread drawThread = new Thread(){
             @Override
             public void run(){
-                if (edgesMat == null || edgesBitmap == null) return;
-                List<List<Point>> paths = com.valka.drawer.Utils.getAsListOfPaths(edgesMat);
-                List<List<Point>> approx = new LinkedList<>();
-
-                for(List<Point> lPath : paths){
-                    MatOfPoint2f mPath = new MatOfPoint2f();
-                    MatOfPoint2f mApprox = new MatOfPoint2f();
-                    mPath.fromList(lPath);
-                    Imgproc.approxPolyDP(mPath,mApprox,2,false);
-                    approx.add(mApprox.toList());
+                Log.i(TAG, "started draw thread");
+                if (approxBitmap == null) {
+                    approxThread.start();
+                    try {
+                        approxThread.join();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                        return;
+                    }
                 }
 
-                approx = sortContours(approx);
+                approx = DrawerUtils.sortContours(approx);
+                Log.i(TAG, "sortContours done");
 
-                final Canvas canvas = new Canvas(edgesBitmap);
+                final Canvas canvas = new Canvas(approxBitmap);
                 final Paint paint = new Paint();
-                canvas.drawColor(Color.BLACK);
-                paint.setColor(Color.RED);
+//                canvas.drawColor(Color.BLACK);
                 paint.setAlpha(255);
                 paint.setStrokeWidth(1f);
 
-                double scaleRatio = 120.0/Math.max(canvas.getWidth(),canvas.getHeight());
-                int j=-1;
+                double scaleRatio = 100.0/Math.max(canvas.getWidth(),canvas.getHeight());
+                int j = -1;
+                Point p1 = null;
+                Point p2 = null;
                 for(List<Point> path : approx){
-                    if(btDrawerDevice!=null) btDrawerDevice.sendGCodeCommand("G0 Z0");//pen up
+                    btDrawerDevice.sendGCodeCommand("G0 Z1");//pen up
                     j++;
                     paint.setColor(j%3==0 ? Color.RED : j%3==1 ? Color.GREEN : j%3==2 ? Color.BLUE : Color.WHITE);
 
                     Iterator<Point> i = path.iterator();
-                    Point p1 = null;
-                    Point p2 = i.next();
+                    p2 = i.next();
 
-                    if(btDrawerDevice!=null) btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", 20+p2.x*scaleRatio, (canvas.getHeight()-p2.y)*scaleRatio));//goto u
-                    if(btDrawerDevice!=null) btDrawerDevice.sendGCodeCommand("G0 Z1");//pen down
+                    //it isnt null! TODO: isConnected() method
+                    if(p1!=null&&p2!=null){
+                        paint.setColor(Color.BLUE);
+                        paint.setAlpha(128);
+                        canvas.drawLine((float)p1.x,(float)p1.y,(float)p2.x,(float)p2.y, paint);
+                    }
+                    btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", 20+p2.x*scaleRatio, (canvas.getHeight()-p2.y)*scaleRatio));//goto u
+                    btDrawerDevice.sendGCodeCommand("G0 Z0");//pen down
 
                     while(i.hasNext()){
                         p1 = p2;
                         p2 = i.next();
+                        paint.setAlpha(255);
+                        paint.setColor(Color.RED);
                         canvas.drawLine((float)p1.x,(float)p1.y,(float)p2.x,(float)p2.y, paint);
                         runOnUiThread(new Runnable() {
                             @Override
@@ -148,41 +193,12 @@ public class MainActivity extends AppCompatActivity {
                                 image.invalidate();
                             }
                         });
-                        if(btDrawerDevice!=null) btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", 20+p2.x*scaleRatio, (canvas.getHeight()-p2.y)*scaleRatio));//goto u                                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+                        btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", 20+p2.x*scaleRatio, (canvas.getHeight()-p2.y)*scaleRatio));//goto u                                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~
                     }
                 }
+                Log.i(TAG, "ended draw thread");
             }
         };
-
-    List<List<Point>> sortContours(List<List<Point>> unsorted){
-        int contoursCount = unsorted.size();
-        List<List<Point>> sorted = new LinkedList<>();
-
-        List<Point> p = unsorted.get(0);
-        sorted.add(p);
-        unsorted.remove(p);
-        for(int i=0; i<contoursCount-1; ++i){
-            Point last = p.get(p.size()-1);
-            //find the one with closest beginning to p's end
-            double min = Double.POSITIVE_INFINITY;
-            List<Point> closest = unsorted.get(0);
-            for(int j=0; j<unsorted.size(); ++j){
-                Point first = unsorted.get(j).get(0);
-                double dx = first.x - last.x;
-                double dy = first.y - last.y;
-                double d = Math.sqrt(dx*dx+dy*dy);
-                if(d<min){
-                    closest = unsorted.get(j);
-                    min=d;
-                }
-            }
-            p = closest;
-            sorted.add(closest);
-            unsorted.remove(closest);
-        }
-        return sorted;
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -227,7 +243,13 @@ public class MainActivity extends AppCompatActivity {
 
         findViewById(R.id.draw_button).setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View view) { drawThread.start(); }
+            public void onClick(View view) {
+                if (btDrawerDevice.isConnected()) {
+                    drawThread.start();
+                } else {
+                    Toast.makeText(MainActivity.this, "Connect to a device first", Toast.LENGTH_LONG).show();
+                }
+            }
         });
 
         lowThresBar = (SeekBar)findViewById(R.id.seekbar_low_thres);
@@ -235,7 +257,9 @@ public class MainActivity extends AppCompatActivity {
         SeekBar.OnSeekBarChangeListener onSeekBarChangeListener = new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                imageThread.start();
+                if(!imageThread.isAlive() && !approxThread.isAlive()) {
+                    imageThread.start();
+                }
             }
 
             @Override
@@ -245,11 +269,30 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
-
+                approxThread.start();
             }
         };
         lowThresBar.setOnSeekBarChangeListener(onSeekBarChangeListener);
         hiThresBar.setOnSeekBarChangeListener(onSeekBarChangeListener);
+        epsilonBar = (SeekBar)findViewById(R.id.seekbar_epsilon);
+        epsilonBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
+
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                if(!approxThread.isAlive()){
+                    approxThread.start();
+                }
+            }
+        });
 
 
     }
