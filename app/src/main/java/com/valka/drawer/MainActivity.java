@@ -24,16 +24,14 @@ import com.valka.drawer.DrawerDevice.BaseDrawerDevice;
 
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
-import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
-import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -48,7 +46,7 @@ public class MainActivity extends AppCompatActivity {
     SeekBar lowThresBar;
     SeekBar hiThresBar;
 
-    BTDrawerDevice btDrawerDevice = new BTDrawerDevice(this);
+    BaseDrawerDevice btDrawerDevice = new BTDrawerDevice(this);
 
 
     static {
@@ -86,9 +84,8 @@ public class MainActivity extends AppCompatActivity {
                 edgesMat = new Mat(mat.size(), CvType.CV_8UC1);
                 Imgproc.Canny(grayMat, edgesMat, 255.0*lowThresBar.getProgress()/100.0, 255.0*hiThresBar.getProgress()/100.0);
                 //invert colors
-                Mat invertcolormatrix= new Mat(edgesMat.rows(),edgesMat.cols(), edgesMat.type(), new Scalar(255,255,255));
-                Core.subtract(invertcolormatrix, edgesMat, edgesMat);
-
+//                Mat invertcolormatrix= new Mat(edgesMat.rows(),edgesMat.cols(), edgesMat.type(), new Scalar(255,255,255));
+//                Core.subtract(invertcolormatrix, edgesMat, edgesMat);
 
                 //draw opencv edges mat
                 edgesBitmap = Bitmap.createBitmap(edgesMat.width(), edgesMat.height(), Bitmap.Config.ARGB_8888);
@@ -107,28 +104,43 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void run(){
                 if (edgesMat == null || edgesBitmap == null) return;
+                List<List<Point>> paths = com.valka.drawer.Utils.getAsListOfPaths(edgesMat);
+                List<List<Point>> approx = new LinkedList<>();
 
-                //get contours and simutae drawing them
-                Mat hierarchy = new Mat();
-                List<MatOfPoint> contoursMats = new ArrayList<>();
-                Imgproc.findContours(edgesMat,contoursMats,hierarchy,Imgproc.RETR_LIST,Imgproc.CHAIN_APPROX_SIMPLE);
+                for(List<Point> lPath : paths){
+                    MatOfPoint2f mPath = new MatOfPoint2f();
+                    MatOfPoint2f mApprox = new MatOfPoint2f();
+                    mPath.fromList(lPath);
+                    Imgproc.approxPolyDP(mPath,mApprox,2,false);
+                    approx.add(mApprox.toList());
+                }
 
-                List<List<Point>> contours = sortContours(contoursMats);
+                approx = sortContours(approx);
 
                 final Canvas canvas = new Canvas(edgesBitmap);
                 final Paint paint = new Paint();
+                canvas.drawColor(Color.BLACK);
                 paint.setColor(Color.RED);
                 paint.setAlpha(255);
                 paint.setStrokeWidth(1f);
 
-                for(int j=0; j<contours.size(); ++j){
+                double scaleRatio = 120.0/Math.max(canvas.getWidth(),canvas.getHeight());
+                int j=-1;
+                for(List<Point> path : approx){
+                    if(btDrawerDevice!=null) btDrawerDevice.sendGCodeCommand("G0 Z0");//pen up
+                    j++;
                     paint.setColor(j%3==0 ? Color.RED : j%3==1 ? Color.GREEN : j%3==2 ? Color.BLUE : Color.WHITE);
 
-                    final List<Point> contour = contours.get(j);
-                    for(int i=1; i<contour.size(); ++i){
-                        Point p1 = contour.get(i-1);
-                        Point p2 = contour.get(i);
-                        //simulate on lcd
+                    Iterator<Point> i = path.iterator();
+                    Point p1 = null;
+                    Point p2 = i.next();
+
+                    if(btDrawerDevice!=null) btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", 20+p2.x*scaleRatio, (canvas.getHeight()-p2.y)*scaleRatio));//goto u
+                    if(btDrawerDevice!=null) btDrawerDevice.sendGCodeCommand("G0 Z1");//pen down
+
+                    while(i.hasNext()){
+                        p1 = p2;
+                        p2 = i.next();
                         canvas.drawLine((float)p1.x,(float)p1.y,(float)p2.x,(float)p2.y, paint);
                         runOnUiThread(new Runnable() {
                             @Override
@@ -136,35 +148,14 @@ public class MainActivity extends AppCompatActivity {
                                 image.invalidate();
                             }
                         });
-                        try {
-                            Thread.sleep(50);
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
-
-                        //send to drawer
-//                        if(!lastPos.equals(e.u)){
-//                            btDrawerDevice.sendGCodeCommand("G0 Z0");//pen up
-//                            btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", e.u.x*scaleRatio, (drawing.getHeight()-e.u.y)*scaleRatio));//goto u
-//                            btDrawerDevice.sendGCodeCommand("G0 Z1");//pen down
-//
-//                        }
-//                        btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", e.v.x*scaleRatio, (drawing.getHeight()-e.v.y)*scaleRatio));//draw u->v line
-//                        lastPos.x = e.v.x;
-//                        lastPos.y = e.v.y;
+                        if(btDrawerDevice!=null) btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", 20+p2.x*scaleRatio, (canvas.getHeight()-p2.y)*scaleRatio));//goto u                                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
                     }
                 }
-
             }
         };
 
-    List<List<Point>> sortContours(List<MatOfPoint> _unsorted){
-        List<List<Point>> unsorted = new ArrayList<>();
-        for(MatOfPoint matOfPoint : _unsorted){
-            unsorted.add(matOfPoint.toList());
-        }
-
+    List<List<Point>> sortContours(List<List<Point>> unsorted){
         int contoursCount = unsorted.size();
         List<List<Point>> sorted = new LinkedList<>();
 
@@ -210,7 +201,7 @@ public class MainActivity extends AppCompatActivity {
                         .setAllowRotation(true)
                         .setAllowCounterRotation(true)
                         .setAspectRatio(1,1)
-                        .setRequestedSize(512,512)
+                        .setRequestedSize(256,256)
                         .setGuidelines(CropImageView.Guidelines.ON)
                         .start(MainActivity.this);
             }
