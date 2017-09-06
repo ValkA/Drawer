@@ -16,5 +16,7 @@
 #define RIGHT_MOTOR_3_PIN 10 //blue
 #define RIGHT_MOTOR_4_PIN 11 //green
 
+#define PEN_SERVO_PIN 12 //yellow
+
 
 #endif

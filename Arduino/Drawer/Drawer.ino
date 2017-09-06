@@ -1,11 +1,12 @@
 #include "Vector.h"
 #include "InverseKinematics.h"
+#include "Pen.h"
 #include "Drawers.h"
 #include <SoftwareSerial.h>
-
+#include <Servo.h>
 // #define DEBUG_SERIAL Serial
 
-
+Servo myservo;
 SoftwareSerial softwareSerial(BLUETOOTH_TX_PIN, BLUETOOTH_RX_PIN);
 void setup() {
     softwareSerial.begin(9600);
@@ -15,6 +16,8 @@ void setup() {
 
     initInverseKinematics();
     initPen();
+
+    myservo.attach(9);
 
     delay(1000);
 }
@@ -57,7 +60,7 @@ void parseLine(Stream& stream){
         DEBUG_SERIAL.println(command);
         DEBUG_SERIAL.println("ok");
     #endif
-    
+
     stream.println("ok");
 
     if(command[0] != 'G' && (command[1] != '1' || command[1] != '0')){
