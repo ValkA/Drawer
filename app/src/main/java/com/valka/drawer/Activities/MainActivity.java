@@ -1,4 +1,4 @@
-package com.valka.drawer;
+package com.valka.drawer.Activities;
 
 import android.content.Intent;
 import android.graphics.Bitmap;
@@ -19,8 +19,11 @@ import android.widget.Toast;
 
 import com.theartofdev.edmodo.cropper.CropImage;
 import com.theartofdev.edmodo.cropper.CropImageView;
+import com.valka.drawer.AppManager;
 import com.valka.drawer.DrawerDevice.BTDrawerDevice;
 import com.valka.drawer.DrawerDevice.BaseDrawerDevice;
+import com.valka.drawer.DrawerUtils;
+import com.valka.drawer.R;
 
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
@@ -44,9 +47,7 @@ public class MainActivity extends AppCompatActivity {
     SeekBar lowThresBar;
     SeekBar hiThresBar;
     SeekBar epsilonBar;
-
-    BaseDrawerDevice btDrawerDevice = new BTDrawerDevice(this);
-
+    SeekBar minDistBar;
 
     static {
         if(!OpenCVLoader.initDebug()){
@@ -114,7 +115,9 @@ public class MainActivity extends AppCompatActivity {
                 //create paths and approx paths
                 if (paths == null) paths = DrawerUtils.getAsListOfPaths(edgesMat);
                 Log.i(TAG, "getAsListOfPaths done");
-                approx = DrawerUtils.approxPolyDP(paths,epsilonBar.getProgress()/25.0,false);
+                approx = DrawerUtils.filterShortPaths(paths,minDistBar.getProgress());
+                Log.i(TAG, "filterShortPaths done");
+                approx = DrawerUtils.approxPolyDP(approx,epsilonBar.getProgress()/25.0,false);
                 Log.i(TAG, "approxPolyDP done");
 
                 approxBitmap = Bitmap.createBitmap(edgesMat.width(), edgesMat.height(), Bitmap.Config.ARGB_8888);
@@ -140,6 +143,8 @@ public class MainActivity extends AppCompatActivity {
         Thread drawThread = new Thread(){
             @Override
             public void run(){
+                BaseDrawerDevice btDrawerDevice = AppManager.getInstance().getDrawerDevice();
+
                 Log.i(TAG, "started draw thread");
                 if (approxBitmap == null) {
                     approxThread.start();
@@ -165,7 +170,7 @@ public class MainActivity extends AppCompatActivity {
                 Point p1 = null;
                 Point p2 = null;
                 for(List<Point> path : approx){
-                    btDrawerDevice.sendGCodeCommand("G0 Z1");//pen up
+                    btDrawerDevice.sendGCodeCommand("G0 Z0.6");//pen up
                     j++;
                     paint.setColor(j%3==0 ? Color.RED : j%3==1 ? Color.GREEN : j%3==2 ? Color.BLUE : Color.WHITE);
 
@@ -179,7 +184,7 @@ public class MainActivity extends AppCompatActivity {
                         canvas.drawLine((float)p1.x,(float)p1.y,(float)p2.x,(float)p2.y, paint);
                     }
                     btDrawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", 20+p2.x*scaleRatio, (canvas.getHeight()-p2.y)*scaleRatio));//goto u
-                    btDrawerDevice.sendGCodeCommand("G0 Z0");//pen down
+                    btDrawerDevice.sendGCodeCommand("G0 Z0.1");//pen down
 
                     while(i.hasNext()){
                         p1 = p2;
@@ -197,6 +202,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 Log.i(TAG, "ended draw thread");
+                approxBitmap = null;
             }
         };
 
@@ -217,7 +223,7 @@ public class MainActivity extends AppCompatActivity {
                         .setAllowRotation(true)
                         .setAllowCounterRotation(true)
                         .setAspectRatio(1,1)
-                        .setRequestedSize(256,256)
+                        .setRequestedSize(512,512)
                         .setGuidelines(CropImageView.Guidelines.ON)
                         .start(MainActivity.this);
             }
@@ -227,7 +233,8 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.choose_device_button).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                btDrawerDevice.open(MainActivity.this, new BaseDrawerDevice.OnOpenListener() {
+                AppManager.getInstance().setDrawerDevice(new BTDrawerDevice(MainActivity.this));
+                AppManager.getInstance().getDrawerDevice().open(MainActivity.this, new BaseDrawerDevice.OnOpenListener() {
                     @Override
                     public void onOpen(boolean success) {
                     if(!success){
@@ -241,10 +248,18 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        findViewById(R.id.manual_control_button).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Intent intent = new Intent(MainActivity.this, ManualControlActivity.class);
+                startActivity(intent);
+            }
+        });
+
         findViewById(R.id.draw_button).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                if (btDrawerDevice.isConnected()) {
+                if (AppManager.getInstance().getDrawerDevice().isConnected()) {
                     drawThread.start();
                 } else {
                     Toast.makeText(MainActivity.this, "Connect to a device first", Toast.LENGTH_LONG).show();
@@ -254,7 +269,7 @@ public class MainActivity extends AppCompatActivity {
 
         lowThresBar = (SeekBar)findViewById(R.id.seekbar_low_thres);
         hiThresBar = (SeekBar)findViewById(R.id.seekbar_hi_thres);
-        SeekBar.OnSeekBarChangeListener onSeekBarChangeListener = new SeekBar.OnSeekBarChangeListener() {
+        SeekBar.OnSeekBarChangeListener onSeekBarChangeListener1 = new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
                 if(!imageThread.isAlive() && !approxThread.isAlive()) {
@@ -272,10 +287,10 @@ public class MainActivity extends AppCompatActivity {
                 approxThread.start();
             }
         };
-        lowThresBar.setOnSeekBarChangeListener(onSeekBarChangeListener);
-        hiThresBar.setOnSeekBarChangeListener(onSeekBarChangeListener);
-        epsilonBar = (SeekBar)findViewById(R.id.seekbar_epsilon);
-        epsilonBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+        lowThresBar.setOnSeekBarChangeListener(onSeekBarChangeListener1);
+        hiThresBar.setOnSeekBarChangeListener(onSeekBarChangeListener1);
+
+        SeekBar.OnSeekBarChangeListener onSeekBarChangeListener2 = new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
 
@@ -292,7 +307,11 @@ public class MainActivity extends AppCompatActivity {
                     approxThread.start();
                 }
             }
-        });
+        };
+        epsilonBar = (SeekBar)findViewById(R.id.seekbar_epsilon);
+        epsilonBar.setOnSeekBarChangeListener(onSeekBarChangeListener2);
+        minDistBar = (SeekBar)findViewById(R.id.seekbar_min_dist);
+        minDistBar.setOnSeekBarChangeListener(onSeekBarChangeListener2);
 
 
     }

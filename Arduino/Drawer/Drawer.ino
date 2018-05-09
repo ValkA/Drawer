@@ -3,10 +3,8 @@
 #include "Pen.h"
 #include "Drawers.h"
 #include <SoftwareSerial.h>
-#include <Servo.h>
-// #define DEBUG_SERIAL Serial
+#define DEBUG_SERIAL Serial
 
-Servo myservo;
 SoftwareSerial softwareSerial(BLUETOOTH_TX_PIN, BLUETOOTH_RX_PIN);
 void setup() {
     softwareSerial.begin(9600);
@@ -17,7 +15,6 @@ void setup() {
     initInverseKinematics();
     initPen();
 
-    myservo.attach(9);
 
     delay(1000);
 }
@@ -81,12 +78,13 @@ void parseLine(Stream& stream){
     if(Y) newPos.y = atof(Y+1);
     if(Z) newZ = atof(Z+1);
 
-    penGotoInterpolated(newPos);
+    penGotoInterpolated(newPos, newZ);//if Z is up, use penGoto() without interpolating
     //TODO: figure out how to handle "z" and then currentZ = newZ;
 
 }
 
 void loop() {
+
     parseLine(softwareSerial);
 
     // if(softwareSerial.available()){

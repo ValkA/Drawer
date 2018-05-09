@@ -89,27 +89,83 @@ public class DrawerUtils {
         sorted.add(p1);
         _unsorted.removeFirst();
         //find nearest path
+        double[] ret = new double[2];
         for(int i=0; i<contoursCount-1; ++i){
-            Point last = p1.get(p1.size()-1);
             //find the one with closest beginning to p's end
             double min = Double.POSITIVE_INFINITY;
+            boolean flip = false;
             List<Point> closest = _unsorted.getFirst();
             for(List<Point> p2 : _unsorted){
-                Point first = p2.get(0);
-                double dx = first.x - last.x;
-                double dy = first.y - last.y;
-                double d = Math.sqrt(dx*dx+dy*dy);
-                if(d<min){
+                distBetweenPaths(p1,p2,ret);
+                if(ret[0]<min){
                     closest = p2;
-                    min = d;
+                    min = ret[0];
+                    flip = (ret[1] != 0.0);
                 }
             }
+            if(flip) flip(closest);
             p1 = closest;
             sorted.add(closest);
             _unsorted.remove(closest);
         }
         return sorted;
     }
+
+    //dist[0] = distance, dist[1] = 0 iff flip of p2 is not needed
+    static private void distBetweenPaths(List<Point> p1, List<Point> p2, double dist[]){
+        Point a1 = p1.get(0);
+        Point b1 = p1.get(p1.size()-1);
+        Point a2 = p2.get(0);
+        Point b2 = p2.get(p2.size()-1);
+
+        double nonFlippedDist = dist(b1,a2);
+        double flippedDist = dist(b1,b2);
+
+        dist[0] = Math.min(flippedDist,nonFlippedDist);
+        dist[1] = (nonFlippedDist <= flippedDist ? 0.0 : 1.0);
+    }
+
+    static private void flip(List<Point> p){
+        Point tmp;
+        for(int i=0; i<p.size()/2; ++i){
+            tmp = p.get(i);
+            p.set(i,p.get(p.size()-1-i));
+            p.set(p.size()-1-i, tmp);
+        }
+    }
+
+    static private double dist(Point a, Point b){
+        double dx = a.x - b.x;
+        double dy = a.y - b.y;
+        return Math.sqrt(dx*dx+dy*dy);
+    }
+
+    static public List<List<Point>> filterShortPaths(List<List<Point>> paths, double minPathLength) {
+        List<List<Point>> filtered = new LinkedList<>();
+        for(List<Point> path : paths){
+            if(getPathLength(path) >= minPathLength){
+                filtered.add(path);
+            }
+        }
+        return filtered;
+    }
+
+    static public double getPathLength(List<Point> path) {
+        if(path.size() == 0){
+            return 0.0;
+        }
+        double length = 0.0;
+        Iterator<Point> it = path.iterator();
+        Point p1 = it.next();
+        while(it.hasNext()){
+            Point p2 = it.next();
+            length += dist(p1,p2);
+            p1 = p2;
+        }
+        return length;
+    }
+
+
 
     static public List<List<Point>> approxPolyDP(List<List<Point>> paths, double epsilon, boolean closed){
         List<List<Point>> approx = new LinkedList<>();
