@@ -1,13 +1,12 @@
 package com.valka.drawer.Activities;
 
-import android.app.Activity;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
-import android.util.Log;
 import android.view.View;
 import android.widget.Toast;
 
 import com.valka.drawer.AppManager;
+import com.valka.drawer.DataStructures.Vector;
 import com.valka.drawer.DrawerDevice.BTDrawerDevice;
 import com.valka.drawer.DrawerDevice.BaseDrawerDevice;
 import com.valka.drawer.R;
@@ -23,19 +22,19 @@ public class ManualControlActivity extends AppCompatActivity {
 
         manualControllerView = (ManualControlView)findViewById(R.id.manual_control_view);
         manualControllerView.setOnPositionListener(new ManualControlView.OnPositionListener() {
-            float _z = -1;
+            double _z = -1;
 
             @Override
-            public void onPosition(float x, float y, float z) {
+            public void onPosition(Vector p) {
                 BaseDrawerDevice drawerDevice = AppManager.getInstance().getDrawerDevice();
                 if(drawerDevice == null) return;
                 if(!drawerDevice.isConnected()) return;
 
-                if(z!=_z) {
-                    _z = z;
-                    drawerDevice.sendGCodeCommand(String.format("G0 Z%.2f", z));//goto u
+                if(p.z!=_z) {
+                    _z = p.z;
+                    drawerDevice.sendGCodeCommand(String.format("G0 Z%.2f", p.z));//goto u
                 }
-                drawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", x, y));//goto u
+                drawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", p.x, p.y));//goto u
             }
         });
 

@@ -2,12 +2,13 @@
 #include "InverseKinematics.h"
 #include "Pen.h"
 #include "Drawers.h"
-#include <SoftwareSerial.h>
-#define DEBUG_SERIAL Serial
+//#include <SoftwareSerial.h>
+//#define DEBUG_SERIAL Serial
 
-SoftwareSerial softwareSerial(BLUETOOTH_TX_PIN, BLUETOOTH_RX_PIN);
+//SoftwareSerial softwareSerial(BLUETOOTH_TX_PIN, BLUETOOTH_RX_PIN);
+
 void setup() {
-    softwareSerial.begin(9600);
+    Serial.begin(9600);
     #ifdef DEBUG_SERIAL
         DEBUG_SERIAL.begin(9600);
     #endif
@@ -85,7 +86,7 @@ void parseLine(Stream& stream){
 
 void loop() {
 
-    parseLine(softwareSerial);
+    parseLine(Serial);
 
     // if(softwareSerial.available()){
     //     DEBUG_SERIAL.write(softwareSerial.read());

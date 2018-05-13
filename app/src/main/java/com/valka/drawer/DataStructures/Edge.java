@@ -5,8 +5,8 @@ package com.valka.drawer.DataStructures;
  */
 
 public class Edge{
-    public Vertex u, v;
-    public Edge(Vertex u, Vertex v){
+    public Vector u, v;
+    public Edge(Vector u, Vector v){
         this.u = u;
         this.v = v;
     }
@@ -17,7 +17,7 @@ public class Edge{
         Edge e = (Edge) o;
         return ((u==e.u) && (v==e.v)) || ((u==e.v) && (v==e.u));
     }
-    public Vertex getV(Vertex u){
+    public Vector getV(Vector u){
         if(this.u.equals(u)){
             return this.v;
         }

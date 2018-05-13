@@ -11,7 +11,7 @@ import java.util.Set;
  * Created by valentid on 23/07/2017.
  */
 
-public class Graph extends HashMap<Vertex, ArrayList<Edge>> {
+public class Graph extends HashMap<Vector, ArrayList<Edge>> {
     private static final String TAG = "Graph";
     private static final int THRES = 0x000000;
     public Graph(Bitmap bitmap) {
@@ -25,7 +25,7 @@ public class Graph extends HashMap<Vertex, ArrayList<Edge>> {
                 int uc = bitmap.getPixel(ux, uy);
                 uc = (uc >> 16) & 0xff;
                 if (uc <= THRES) continue;
-                Vertex u = new Vertex(ux, uy);
+                Vector u = new Vector(ux, uy);
 
                 ArrayList<Edge> ue = get(u);
                 if (get(u) == null) {
@@ -39,7 +39,7 @@ public class Graph extends HashMap<Vertex, ArrayList<Edge>> {
                     int vc = bitmap.getPixel(vx, vy);
                     vc = (vc >> 16) & 0xff;
                     if (vc <= THRES) continue;
-                    Vertex v = new Vertex(vx, vy);
+                    Vector v = new Vector(vx, vy);
                     ArrayList<Edge> ve = get(v);
                     if (get(v) == null) {
                         ve = new ArrayList<>();
@@ -53,24 +53,24 @@ public class Graph extends HashMap<Vertex, ArrayList<Edge>> {
         }
     }
 
-    private Set<Vertex> notVisitedV;
+    private Set<Vector> notVisitedV;
     private HashSet<Edge> visitedE;
     public interface onEdgeListener {
         void onEdge(Edge e, double progress);
     }
     onEdgeListener onEdgeListener;
-    Vertex lastV;
+    Vector lastV;
     public void createDfsGCode(onEdgeListener onEdgeListener){
         this.onEdgeListener = onEdgeListener;
         notVisitedV = new HashSet(keySet());
         visitedE = new HashSet<>();
 
-        Vertex firstV = notVisitedV.iterator().next();
+        Vector firstV = notVisitedV.iterator().next();
         dfs(firstV);
         while(!notVisitedV.isEmpty()){
             //find closest to lastV
             double minDist = Double.POSITIVE_INFINITY;
-            for(Vertex w : notVisitedV){
+            for(Vector w : notVisitedV){
                 double dist = w.sqrDist(lastV);
                 if(dist < minDist){
                     minDist = dist;
@@ -81,7 +81,7 @@ public class Graph extends HashMap<Vertex, ArrayList<Edge>> {
         }
     }
 
-    private void dfs(Vertex u){
+    private void dfs(Vector u){
         if(!notVisitedV.contains(u)) return;//if visited u
         lastV = u;
         notVisitedV.remove(u);
