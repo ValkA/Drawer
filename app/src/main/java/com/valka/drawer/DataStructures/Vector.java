@@ -17,6 +17,11 @@ public class Vector {
         this.y = y;
         this.z = z;
     }
+    public Vector(Vector p){
+        this.x = p.x;
+        this.y = p.y;
+        this.z = p.z;
+    }
 
     public double sqrDist(Vector v){
         double dx = v.x - x;

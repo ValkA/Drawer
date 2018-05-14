@@ -2,7 +2,6 @@ package com.valka.drawer.Views;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -15,10 +14,6 @@ import com.valka.drawer.DataStructures.Vector;
 import static android.view.MotionEvent.ACTION_DOWN;
 import static android.view.MotionEvent.ACTION_MOVE;
 import static android.view.MotionEvent.ACTION_UP;
-
-/**
- * Created by valentid on 09/05/2018.
- */
 
 /**
  * Created by valentid on 09/05/2018.
@@ -53,6 +48,8 @@ public class ManualControlView extends View {
         super(context, attrs);
     }
 
+    Vector _l;
+    boolean wasNotInView = false;
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if(!(event.getAction() == ACTION_MOVE || event.getAction() == ACTION_DOWN || event.getAction() == ACTION_UP)){
@@ -63,7 +60,23 @@ public class ManualControlView extends View {
             _pen.y = event.getY();
             _pen.z = (event.getAction() == ACTION_UP ? 1 : 0); //TODO:_pen.z = event.getPressure();
             androidToDrawer(pen.assign(_pen));
-            if(!inView(pen)) return false;
+            if(!inView(pen)) {
+                if(wasNotInView){
+                    return false;
+                }
+                wasNotInView = true;
+                _pen.z = 1;
+                pen.z = 1;
+            } else {
+                wasNotInView = false;
+            }
+
+            //draw line
+            paint.setColor(Color.RED);
+            if(_l != null) drawingCanvas.drawLine((float)_l.x,(float)_l.y,(float)_pen.x,(float)_pen.y,paint);
+            else _l = new Vector();
+            _l.assign(_pen);
+            if(_l.z == 1) _l = null;
 
             invalidate();
             if(onPositionListener!=null){
@@ -72,6 +85,17 @@ public class ManualControlView extends View {
             return true;
         }
         return false;
+    }
+
+    Vector _ll1;
+    public void drawerCallback(Vector pen){
+        Vector _ll2 = drawerToAndroid(new Vector(pen));
+        paint.setColor(Color.WHITE);
+        if(_ll1 != null) drawingCanvas.drawLine((float)_ll1.x,(float)_ll1.y,(float)_ll2.x,(float)_ll2.y,paint);
+        else _ll1 = new Vector();
+        _ll1.assign(_ll2);
+        if(_ll2.z == 1) _ll1 = null;
+        invalidate();
     }
 
     /**
@@ -152,8 +176,6 @@ public class ManualControlView extends View {
 
         //drawing
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.WHITE);
-        drawingCanvas.drawCircle((float)_pen.x,(float)_pen.y,10f,paint);
         canvas.drawBitmap(drawingBitmap, 0, 0, paint);
 
         //motors

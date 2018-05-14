@@ -2,6 +2,7 @@ package com.valka.drawer.Activities;
 
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.View;
 import android.widget.Toast;
 
@@ -12,8 +13,13 @@ import com.valka.drawer.DrawerDevice.BaseDrawerDevice;
 import com.valka.drawer.R;
 import com.valka.drawer.Views.ManualControlView;
 
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+
 public class ManualControlActivity extends AppCompatActivity {
+    private final static String TAG = "ManualControlActivity";
     ManualControlView manualControllerView;
+    DrawerThread drawerThread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -30,11 +36,10 @@ public class ManualControlActivity extends AppCompatActivity {
                 if(drawerDevice == null) return;
                 if(!drawerDevice.isConnected()) return;
 
-                if(p.z!=_z) {
-                    _z = p.z;
-                    drawerDevice.sendGCodeCommand(String.format("G0 Z%.2f", p.z));//goto u
-                }
-                drawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", p.x, p.y));//goto u
+                try {
+                    drawerThread.getPointsQueue().put(new Vector(p));
+                    Log.d(TAG, "+ pointsQueue.size() = " + drawerThread.getPointsQueue().size());
+                } catch (InterruptedException e) {}
             }
         });
 
@@ -54,6 +59,59 @@ public class ManualControlActivity extends AppCompatActivity {
                 });
             }
         });
+    }
+
+    @Override
+    public void onResume(){
+        super.onResume();
+        drawerThread = new DrawerThread();
+        drawerThread.start();
+    }
+
+    @Override
+    public void onPause(){
+        if(drawerThread != null){
+            drawerThread.interrupt();
+            drawerThread = null;
+        }
+        super.onPause();
+    }
+
+    private class DrawerThread extends Thread{
+        private double _z = 0;
+        private BlockingQueue<Vector> pointsQueue = new LinkedBlockingQueue<>();
+
+        public BlockingQueue getPointsQueue(){
+            return pointsQueue;
+        }
+
+        public void run() {
+            while(!this.isInterrupted()){
+                BaseDrawerDevice drawerDevice = AppManager.getInstance().getDrawerDevice();
+                if(drawerDevice == null || !drawerDevice.isConnected()) {
+                    try {
+                        Thread.sleep(100);
+                        continue;
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+
+                }
+
+                Vector p = null;
+                try {
+                    p = pointsQueue.take();
+                } catch (InterruptedException e) {
+                    return;
+                }
+
+                if(p.z>_z) drawerDevice.sendGCodeCommand(String.format("G0 Z%.2f", p.z));//up
+                drawerDevice.sendGCodeCommand(String.format("G0 X%.2f Y%.2f", p.x, p.y));//x,y
+                if(p.z<_z) drawerDevice.sendGCodeCommand(String.format("G0 Z%.2f", p.z));//down
+                _z = p.z;
+                manualControllerView.drawerCallback(p);
+            }
+        }
     }
 
 }

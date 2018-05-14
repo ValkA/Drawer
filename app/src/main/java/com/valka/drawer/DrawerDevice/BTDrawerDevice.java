@@ -188,7 +188,7 @@ public class BTDrawerDevice extends BaseDrawerDevice {
 
     @Override
     public CommandResponse sendGCodeCommand(final String gCodeCommand){
-        Log.d("BTDrawerDevice", gCodeCommand);
+//        Log.d("BTDrawerDevice", gCodeCommand);
         try {
             socket.getOutputStream().write((gCodeCommand+"\n").getBytes());
         } catch (IOException e) {
